@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Niskala - Pure Presence</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700;900&display=swap" rel="stylesheet">
+    <!-- Pustaka Lucide Ikon -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .fade-in { animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #4f46e5; border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        
+        // Komponen Ikon yang diperbaiki
+        const Icon = ({ name, className }) => {
+            useEffect(() => {
+                // Menginisialisasi ikon lucide setelah komponen dirender
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }, [name]);
+
+            return <i data-lucide={name} className={className}></i>;
+        };
+
+        const PACKAGES = [
+            { id: 1, time: 1, label: { en: '1 Hour Stay', id: '1 Jam Kunjungan' }, price: '10.000' },
+            { id: 2, time: 2, label: { en: '2 Hours Stay', id: '2 Jam Kunjungan' }, price: '20.000' },
+            { id: 3, time: 3, label: { en: '3 Hours Stay', id: '3 Jam Kunjungan' }, price: '30.000' },
+            { id: 4, time: 4, label: { en: '4 Hours Stay', id: '4 Jam Kunjungan' }, price: '40.000' },
+            { id: 5, time: 5, label: { en: '5 Hours Stay', id: '5 Jam Kunjungan' }, price: '50.000' },
+            { id: 24, time: 24, label: { en: '24 Hours Stay', id: '24 Jam Kunjungan' }, price: '100.000' },
+        ];
+
+        const TRANSLATIONS = {
+            en: {
+                heroTitle: "Niskala",
+                heroSubtitle: "Pure Presence. Thoughtful Dialogue.",
+                heroDesc: "A sanctuary for deep reflection and meaningful exchange. Experience a space that values your focus without distraction.",
+                startButton: "Enter Space",
+                extendSession: "Extend Stay",
+                timeRemaining: "Presence Remaining",
+                placeholder: "Write your thoughts...",
+                sessionEnded: "The moment has passed. Extend to stay longer.",
+                choosePlan: "Select your duration of presence",
+                safetyNote: "Niskala is a sanctuary of respect. We foster positive and constructive dialogues."
+            },
+            id: {
+                heroTitle: "Niskala",
+                heroSubtitle: "Kehadiran Murni. Dialog Bermakna.",
+                heroDesc: "Tempat perlindungan untuk refleksi mendalam dan pertukaran pikiran. Rasakan ruang yang menghargai fokus Anda tanpa gangguan.",
+                startButton: "Masuk Ruang",
+                extendSession: "Tambah Durasi",
+                timeRemaining: "Sisa Waktu",
+                placeholder: "Tuliskan pikiran Anda...",
+                sessionEnded: "Momen telah berlalu. Tambah durasi untuk tinggal lebih lama.",
+                choosePlan: "Pilih durasi kehadiran Anda",
+                safetyNote: "Niskala adalah tempat perlindungan yang penuh hormat. Kami memupuk dialog positif dan konstruktif."
+            }
+        };
+
+        const App = () => {
+            const [lang, setLang] = useState('en');
+            const [theme, setTheme] = useState('dark');
+            const [sessionActive, setSessionActive] = useState(false);
+            const [remainingTime, setRemainingTime] = useState(0);
+            const [messages, setMessages] = useState([]);
+            const [input, setInput] = useState('');
+            const [isLoading, setIsLoading] = useState(false);
+            const [showPackages, setShowPackages] = useState(true);
+            const [apiKey, setApiKey] = useState('');
+
+            const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
+            const scrollRef = useRef(null);
+
+            useEffect(() => {
+                let interval;
+                if (sessionActive && remainingTime > 0) {
+                    interval = setInterval(() => {
+                        setRemainingTime(prev => prev - 1);
+                    }, 1000);
+                } else if (remainingTime <= 0 && sessionActive) {
+                    setSessionActive(false);
+                }
+                return () => clearInterval(interval);
+            }, [sessionActive, remainingTime]);
+
+            useEffect(() => {
+                if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+            }, [messages, isLoading]);
+
+            const formatTime = (seconds) => {
+                const h = Math.floor(seconds / 3600);
+                const m = Math.floor((seconds % 3600) / 60);
+                const s = seconds % 60;
+                return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            };
+
+            const startSession = (hours) => {
+                const key = prompt("Please enter your OpenAI API Key to start (it is stored only in your browser):");
+                if (!key) return;
+                setApiKey(key);
+                setRemainingTime(hours * 3600);
+                setSessionActive(true);
+                setShowPackages(false);
+                setMessages([{ role: 'assistant', content: t.heroSubtitle }]);
+            };
+
+            const handleSend = async () => {
+                if (!input.trim() || !sessionActive || isLoading) return;
+                const userMsg = input;
+                setInput('');
+                setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
+                setIsLoading(true);
+
+                try {
+                    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${apiKey}`
+                        },
+                        body: JSON.stringify({
+                            model: "gpt-4o-mini",
+                            messages: [
+                                { role: "system", content: "You are Niskala Guide. Calm, wise, and neutral. Decline harmful content politely. Do not support SARA, extreme sexual content, provocative politics, or hate speech." },
+                                ...messages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
+                                { role: "user", content: userMsg }
+                            ]
+                        })
+                    });
+                    const data = await response.json();
+                    if (data.error) throw new Error(data.error.message);
+                    setMessages(prev => [...prev, { role: 'assistant', content: data.choices[0].message.content }]);
+                } catch (e) {
+                    setMessages(prev => [...prev, { role: 'assistant', content: "Error: " + e.message }]);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            return (
+                <div className={`min-h-screen transition-colors duration-1000 ${theme === 'dark' ? 'bg-[#0a0a0c] text-slate-300' : 'bg-[#f8f9fa] text-slate-800'}`}>
+                    {/* Kontrol Header */}
+                    <div className="fixed top-6 right-6 z-50 flex gap-4">
+                        <button onClick={() => setLang(lang === 'en' ? 'id' : 'en')} className="p-2 border rounded-xl text-xs font-bold uppercase tracking-widest bg-opacity-20 bg-slate-500">
+                            {lang === 'en' ? '🇮🇩 ID' : '🇺🇸 EN'}
+                        </button>
+                        <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-2 border rounded-xl shadow-sm bg-opacity-20 bg-slate-500 flex items-center justify-center min-w-[40px]">
+                            <Icon name={theme === 'dark' ? 'sun' : 'moon'} className="w-5 h-5 text-indigo-400" />
+                        </button>
+                    </div>
+
+                    {showPackages ? (
+                        <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center space-y-12 fade-in">
+                            <div className="space-y-4">
+                                <h1 className="text-6xl font-light tracking-[0.2em] uppercase text-transparent bg-clip-text bg-gradient-to-b from-indigo-400 to-indigo-700">
+                                    {t.heroTitle}
+                                </h1>
+                                <p className="text-lg font-light opacity-50 tracking-[0.4em] uppercase">{t.heroSubtitle}</p>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl w-full">
+                                {PACKAGES.map(pkg => (
+                                    <button key={pkg.id} onClick={() => startSession(pkg.time)} className="p-6 border rounded-[2rem] hover:bg-indigo-500/10 transition-all text-left group border-slate-800">
+                                        <div className="text-[10px] opacity-40 uppercase font-bold tracking-widest">{pkg.label[lang]}</div>
+                                        <div className="text-xl font-bold mt-1 tracking-tight">Rp {pkg.price}</div>
+                                    </button>
+                                ))}
+                            </div>
+                            <p className="text-[9px] opacity-30 uppercase tracking-[0.2em] max-w-xs">{t.safetyNote}</p>
+                        </div>
+                    ) : (
+                        <div className="flex h-screen overflow-hidden">
+                            {/* Sidebar Sederhana */}
+                            <div className="hidden md:flex w-72 flex-col border-r border-slate-800 p-8">
+                                <h2 className="text-xl font-light tracking-widest uppercase text-indigo-500 mb-12">Niskala</h2>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-bold opacity-30 uppercase">{t.timeRemaining}</label>
+                                    <div className="text-3xl font-mono text-indigo-400">{formatTime(remainingTime)}</div>
+                                </div>
+                                <div className="mt-auto">
+                                    <button onClick={() => window.location.reload()} className="text-[10px] font-bold opacity-30 uppercase hover:text-red-500 transition-all flex items-center gap-2">
+                                        <Icon name="trash-2" className="w-4 h-4" /> Close Space
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Area Chat */}
+                            <div className="flex-1 flex flex-col">
+                                <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 md:p-12 space-y-8">
+                                    {messages.map((m, i) => (
+                                        <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} fade-in`}>
+                                            <div className={`max-w-[80%] p-6 rounded-[2rem] ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-slate-900 border border-slate-800 rounded-tl-none'}`}>
+                                                <p className="text-sm md:text-base font-light">{m.content}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {isLoading && (
+                                        <div className="flex justify-start">
+                                            <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl animate-pulse text-xs opacity-50">
+                                                Thinking...
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="p-6 md:p-12 pt-0">
+                                    <div className="max-w-3xl mx-auto relative">
+                                        <textarea
+                                            value={input}
+                                            onChange={(e) => setInput(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
+                                            placeholder={sessionActive ? t.placeholder : t.sessionEnded}
+                                            className="w-full bg-slate-900/50 border border-slate-800 rounded-[2rem] py-5 pl-7 pr-20 text-sm outline-none focus:border-indigo-600/50 resize-none"
+                                            rows="1"
+                                        />
+                                        <button onClick={handleSend} className="absolute right-3.5 bottom-3.5 p-3.5 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-500 transition-colors">
+                                            <Icon name="send" className="w-5 h-5" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
